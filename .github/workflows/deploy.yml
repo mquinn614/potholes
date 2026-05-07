@@ -1,0 +1,56 @@
+name: Deploy
+
+'on':
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-main
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: List files to deploy
+        run: ls -lh index.html data.bin meta.json
+
+      - name: Upload static files via scp (SSH)
+        env:
+          SSHPASS: ${{ secrets.SFTP_PASSWORD }}
+          DEPLOY_HOST: ${{ secrets.SFTP_HOST }}
+          DEPLOY_USER: ${{ secrets.SFTP_USERNAME }}
+          DEPLOY_PORT: ${{ secrets.SFTP_PORT || '22' }}
+          DEPLOY_PATH: ${{ secrets.SFTP_REMOTE_PATH }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y sshpass
+          export SSHPASS
+          REMOTE_BASE="${DEPLOY_PATH%/}"
+          sshpass -e scp -P "${DEPLOY_PORT}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+            index.html data.bin meta.json \
+            "${DEPLOY_USER}@${DEPLOY_HOST}:${REMOTE_BASE}/"
+
+      - name: Verify index.html exists on server
+        env:
+          SSHPASS: ${{ secrets.SFTP_PASSWORD }}
+          DEPLOY_HOST: ${{ secrets.SFTP_HOST }}
+          DEPLOY_USER: ${{ secrets.SFTP_USERNAME }}
+          DEPLOY_PORT: ${{ secrets.SFTP_PORT || '22' }}
+          DEPLOY_PATH: ${{ secrets.SFTP_REMOTE_PATH }}
+        run: |
+          set -euo pipefail
+          export SSHPASS
+          REMOTE_BASE="${DEPLOY_PATH%/}"
+          sshpass -e ssh -p "${DEPLOY_PORT}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+            "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            "ls -la '${REMOTE_BASE}' && test -f '${REMOTE_BASE}/index.html' && test -f '${REMOTE_BASE}/data.bin' && test -f '${REMOTE_BASE}/meta.json'"
