@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <title>The Pothole Map — NYC's quiet, daily repair</title>
-<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
 <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
 <style>
   :root {
@@ -17,17 +17,20 @@
     --mamdani:  #82e08f;
   }
   html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink);
-    font-family: 'Charter', 'Georgia', 'Times New Roman', serif; }
-  #map { position: absolute; inset: 0; }
+    font-family: 'Charter', 'Georgia', 'Times New Roman', serif;
+    overscroll-behavior: none; }
+  #map { position: absolute; inset: 0; touch-action: none; }
   .ui { position: absolute; inset: 0; pointer-events: none; z-index: 10; }
   .ui > * { pointer-events: auto; position: absolute; }
 
-  /* Title strip */
+  /* Title strip — fully transparent to pointer events so the map below
+     can receive pinch / pan gestures across the full top of the screen. */
   .header {
     top: 0; left: 0; right: 0;
     padding: 18px 28px 12px;
     display: flex; flex-direction: column; gap: 4px;
     background: linear-gradient(to bottom, rgba(10,10,10,0.85), rgba(10,10,10,0));
+    pointer-events: none;
   }
   .title { font-size: 22px; font-weight: 700; letter-spacing: 0.2px; }
   .subtitle { font-size: 13px; color: var(--muted); max-width: 720px; line-height: 1.45; }
