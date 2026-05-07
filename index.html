@@ -102,9 +102,13 @@
   .tick::before { content: ''; position: absolute; top: -4px; left: 50%;
     width: 1px; height: 4px; background: rgba(255,255,255,0.2); }
 
-  /* Annotation banner */
+  /* Annotation banner — purely informational; must NOT eat touches.
+     Without pointer-events: none the invisible (opacity:0) annotation
+     children still occupy layout, creating a tall dead zone on the
+     right side of the screen on mobile. */
   .annotations { top: 110px; right: 24px; max-width: 280px;
-    display: flex; flex-direction: column; gap: 6px; align-items: flex-end; }
+    display: flex; flex-direction: column; gap: 6px; align-items: flex-end;
+    pointer-events: none; }
   .annot {
     background: rgba(20,20,20,0.85);
     border-left: 3px solid var(--accent);
@@ -113,6 +117,7 @@
     opacity: 0; transform: translateX(20px);
     transition: opacity 0.5s ease, transform 0.5s ease;
     font-family: 'Charter', 'Georgia', serif;
+    pointer-events: none;
   }
   .annot.show { opacity: 1; transform: translateX(0); }
   .annot .label { font-weight: 600; color: var(--accent); font-size: 11px;
