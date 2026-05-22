@@ -11,6 +11,7 @@ Sorted ascending by month so the browser can binary-search a current frame.
 """
 
 import csv, glob, json, re, struct, sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 csv.field_size_limit(sys.maxsize)
@@ -140,6 +141,8 @@ for _ in range(months_total):
 
 meta = {
     "n": N,
+    "generated": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+    "dataThrough": month_labels[last_month],
     "epoch": {"year": EPOCH_Y, "month": EPOCH_M},
     "months": months_total,
     "monthLabels": month_labels,

@@ -1,0 +1,71 @@
+name: Monthly data refresh
+
+'on':
+  schedule:
+    # 10:17 UTC on the 1st of each month = ~6:17am ET (off-peak minute to
+    # avoid GitHub's top-of-hour scheduling delays). Cron is always UTC, so
+    # the ET clock time drifts by an hour across daylight saving — fine here.
+    - cron: '17 10 1 * *'
+  workflow_dispatch:
+
+concurrency:
+  group: refresh
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Download latest CSV from NYC OpenData
+        run: |
+          set -euo pipefail
+          curl -sSL --fail --retry 3 --retry-delay 15 --max-time 600 \
+            'https://data.cityofnewyork.us/api/views/x9wy-ing4/rows.csv?accessType=DOWNLOAD' \
+            -o 'Street_Pothole_Work_Orders_latest.csv'
+          echo "Rows (incl. header):"
+          wc -l 'Street_Pothole_Work_Orders_latest.csv'
+
+      - name: Regenerate data.bin + meta.json
+        run: python3 preprocess.py
+
+      - name: Commit regenerated data if it changed
+        run: |
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data.bin meta.json
+          if git diff --cached --quiet; then
+            echo "No data changes this month."
+          else
+            git commit -m "Monthly data refresh ($(date -u +%Y-%m-%d))"
+            git push
+          fi
+
+      - name: Upload to Bluehost via scp (SSH)
+        env:
+          SSHPASS: ${{ secrets.SFTP_PASSWORD }}
+          DEPLOY_HOST: ${{ secrets.SFTP_HOST }}
+          DEPLOY_USER: ${{ secrets.SFTP_USERNAME }}
+          DEPLOY_PORT: ${{ secrets.SFTP_PORT || '22' }}
+          DEPLOY_PATH: ${{ secrets.SFTP_REMOTE_PATH }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y sshpass
+          export SSHPASS
+          REMOTE_BASE="${DEPLOY_PATH%/}"
+          sshpass -e scp -P "${DEPLOY_PORT}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+            index.html data.bin meta.json \
+            "${DEPLOY_USER}@${DEPLOY_HOST}:${REMOTE_BASE}/"

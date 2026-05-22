@@ -60,6 +60,8 @@
   .spark canvas { width: 100%; height: 100%; display: block; }
   .spark-label { font-size: 10px; color: var(--muted); text-transform: uppercase;
     letter-spacing: 0.7px; font-family: 'Inter', system-ui, sans-serif; margin-bottom: 2px; }
+  .data-stamp { margin-top: 12px; font-size: 10.5px; color: #6a6a6a;
+    font-family: 'Inter', system-ui, sans-serif; letter-spacing: 0.2px; }
 
   /* Footer scrubber */
   .scrubber {
@@ -191,6 +193,8 @@
     <hr class="sep" />
     <div class="spark-label">Monthly throughput</div>
     <div class="spark"><canvas id="spark"></canvas></div>
+
+    <div class="data-stamp" id="dataStamp"></div>
   </div>
 
   <div class="annotations" id="annotations"></div>
@@ -598,6 +602,19 @@ function buildLegend() {
 }
 
 //
+// ---- Data freshness stamp ----
+//
+function buildDataStamp() {
+  const { meta } = DATA;
+  const el = document.getElementById('dataStamp');
+  if (!el || !meta.generated) return;
+  // meta.generated is a UTC date like "2026-05-22"; show "Month Year".
+  const d = new Date(meta.generated + 'T00:00:00Z');
+  const when = d.toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+  el.textContent = `Data updated ${when} · NYC OpenData`;
+}
+
+//
 // ---- Animation loop ----
 //
 function tick(ts) {
@@ -639,6 +656,7 @@ async function main() {
 
     buildTimeline();
     buildLegend();
+    buildDataStamp();
     setupAnnotations();
     setMonth(0);
     requestAnimationFrame(tick);
