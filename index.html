@@ -4,6 +4,19 @@
 <meta charset="utf-8" />
 <title>The Pothole Map — NYC's quiet, daily repair</title>
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<meta name="description" content="Sixteen years of New York City pothole repairs — 400,000 closed work orders animated month by month across four mayors." />
+<link rel="icon" type="image/svg+xml" href="favicon.svg" />
+<meta property="og:type" content="website" />
+<meta property="og:title" content="The Pothole Map" />
+<meta property="og:description" content="Sixteen years of NYC pothole repairs — 400,000 work orders animated month by month across four mayors." />
+<meta property="og:url" content="https://mqsandbox.com/potholes/" />
+<meta property="og:image" content="https://mqsandbox.com/potholes/og-image.png" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="The Pothole Map" />
+<meta name="twitter:description" content="Sixteen years of NYC pothole repairs, animated across four mayors." />
+<meta name="twitter:image" content="https://mqsandbox.com/potholes/og-image.png" />
 <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
 <style>
   :root {
@@ -61,7 +74,16 @@
   .spark-label { font-size: 10px; color: var(--muted); text-transform: uppercase;
     letter-spacing: 0.7px; font-family: 'Inter', system-ui, sans-serif; margin-bottom: 2px; }
   .data-stamp { margin-top: 12px; font-size: 10.5px; color: #6a6a6a;
-    font-family: 'Inter', system-ui, sans-serif; letter-spacing: 0.2px; }
+    font-family: 'Inter', system-ui, sans-serif; letter-spacing: 0.2px; line-height: 1.5; }
+
+  /* Borough counters */
+  .boro-row { display: flex; justify-content: space-between; align-items: baseline;
+    font-size: 12px; color: var(--muted); margin-top: 5px; }
+  .boro-row .v { color: var(--ink); font-variant-numeric: tabular-nums; }
+  .boro-row .bar { flex: 1; height: 3px; margin: 0 8px; border-radius: 2px;
+    background: rgba(255,255,255,0.06); position: relative; overflow: hidden; }
+  .boro-row .bar > div { position: absolute; inset: 0 auto 0 0;
+    background: rgba(255,140,66,0.55); border-radius: 2px; }
 
   /* Footer scrubber */
   .scrubber {
@@ -156,6 +178,7 @@
     .legend { display: none; }
     .scrubber { left: 12px; right: 12px; bottom: 12px; padding: 10px 12px; }
     .annotations { top: 70px; right: 12px; }
+    .lag-block, .boro-block { display: none; }
   }
 </style>
 </head>
@@ -187,12 +210,24 @@
 
     <hr class="sep" />
     <div class="stat big"><span>This month</span><span class="v" id="statMonth">0</span></div>
-    <div class="stat"><span>This term</span><span class="v" id="statTerm">0</span></div>
+    <div class="stat"><span id="termLabel">This term</span><span class="v" id="statTerm">0</span></div>
     <div class="stat"><span>All-time</span><span class="v" id="statTotal">0</span></div>
+    <div class="stat"><span>Citizen wait, median</span><span class="v" id="statLag">—</span></div>
 
     <hr class="sep" />
     <div class="spark-label">Monthly throughput</div>
     <div class="spark"><canvas id="spark"></canvas></div>
+
+    <div class="lag-block">
+      <div class="spark-label" style="margin-top:10px;">Citizen report wait · median days (0–30)</div>
+      <div class="spark"><canvas id="sparkLag"></canvas></div>
+    </div>
+
+    <div class="boro-block">
+      <hr class="sep" />
+      <div class="spark-label">Repairs by borough · to date</div>
+      <div id="boroRows"></div>
+    </div>
 
     <div class="data-stamp" id="dataStamp"></div>
   </div>
@@ -423,12 +458,23 @@ function updateUI() {
   for (let i = 0; i <= currentMonth; i++) total += meta.monthlyByBoro[i].reduce((a,b)=>a+b,0);
   document.getElementById('statTotal').textContent = nfmt(total);
 
+  // Bloomberg's term began in 2002 but the data starts in 2010 — say so.
+  document.getElementById('termLabel').textContent =
+    mIdx === 0 ? 'This term (from 2010)' : 'This term';
+
+  // Median wait on citizen-reported potholes closed this month.
+  const lag = meta.ctzLagMedian ? meta.ctzLagMedian[currentMonth] : null;
+  document.getElementById('statLag').textContent =
+    lag == null ? '—' : `${Math.round(lag)} day${Math.round(lag) === 1 ? '' : 's'}`;
+
   // Playhead position.
   const ph = document.getElementById('playhead');
   ph.style.left = `${(currentMonth / (meta.months - 1)) * 100}%`;
 
   // Spark redraw highlight.
   drawSpark();
+  drawSparkLag();
+  updateBoroRows();
 
   // Annotations.
   renderAnnotations();
@@ -470,6 +516,76 @@ function drawSpark() {
   const cx = currentMonth * bw + bw / 2;
   ctx.fillStyle = 'rgba(255,140,66,1)';
   ctx.fillRect(cx - 1, 0, 2, h);
+}
+
+//
+// ---- Lag sparkline (median citizen-report wait, fixed 0–30d scale) ----
+//
+const LAG_SCALE_MAX = 30;
+function drawSparkLag() {
+  const { meta } = DATA;
+  if (!meta.ctzLagMedian) return;
+  const c = document.getElementById('sparkLag');
+  if (!c || c.offsetParent === null) return; // hidden on mobile
+  const dpr = window.devicePixelRatio || 1;
+  const w = c.clientWidth || 280, h = c.clientHeight || 42;
+  c.width = w * dpr; c.height = h * dpr;
+  const ctx = c.getContext('2d');
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, w, h);
+
+  const N = meta.months;
+  const bw = w / N;
+  for (let i = 0; i < N; i++) {
+    const v = meta.ctzLagMedian[i];
+    if (v == null) continue;
+    const mIdx = mayorAt(i, meta);
+    const c1 = MAYOR_COLORS[mIdx];
+    const lit = i <= currentMonth;
+    ctx.fillStyle = `rgba(${c1[0]},${c1[1]},${c1[2]},${lit ? 0.85 : 0.18})`;
+    const bh = Math.min(v, LAG_SCALE_MAX) / LAG_SCALE_MAX * h;
+    ctx.fillRect(i * bw, h - bh, Math.max(1, bw - 0.5), bh);
+  }
+  const cx = currentMonth * bw + bw / 2;
+  ctx.fillStyle = 'rgba(255,140,66,1)';
+  ctx.fillRect(cx - 1, 0, 2, h);
+}
+
+//
+// ---- Borough counters (cumulative to current month) ----
+//
+let boroPrefix = null;  // boroPrefix[m][b] = cumulative repairs through month m
+let boroEls = null;     // [{nameEl, barEl, valEl, b}] in display order
+function buildBoroRows() {
+  const { meta } = DATA;
+  const M = meta.months, B = meta.boros.length;
+  boroPrefix = new Array(M);
+  let run = new Array(B).fill(0);
+  for (let i = 0; i < M; i++) {
+    run = run.map((v, b) => v + meta.monthlyByBoro[i][b]);
+    boroPrefix[i] = run.slice();
+  }
+  // Fixed display order: largest final total first (stable, no reordering).
+  const order = [...Array(B).keys()].sort((a, b2) => boroPrefix[M-1][b2] - boroPrefix[M-1][a]);
+  const wrap = document.getElementById('boroRows');
+  wrap.innerHTML = '';
+  boroEls = order.map(b => {
+    const row = document.createElement('div');
+    row.className = 'boro-row';
+    row.innerHTML = `<span>${meta.boros[b]}</span><span class="bar"><div></div></span><span class="v">0</span>`;
+    wrap.appendChild(row);
+    return { b, barEl: row.querySelector('.bar > div'), valEl: row.querySelector('.v') };
+  });
+}
+function updateBoroRows() {
+  if (!boroEls) return;
+  const { meta } = DATA;
+  const counts = boroPrefix[currentMonth];
+  const max = boroPrefix[meta.months - 1][boroEls[0].b] || 1;
+  for (const { b, barEl, valEl } of boroEls) {
+    valEl.textContent = nfmt(counts[b]);
+    barEl.style.width = `${(counts[b] / max) * 100}%`;
+  }
 }
 
 //
@@ -611,7 +727,9 @@ function buildDataStamp() {
   // meta.generated is a UTC date like "2026-05-22"; show "Month Year".
   const d = new Date(meta.generated + 'T00:00:00Z');
   const when = d.toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
-  el.textContent = `Data updated ${when} · NYC OpenData`;
+  const through = meta.dataThrough ? `Data through ${fmtMonth(meta.dataThrough)} · ` : '';
+  el.innerHTML = `${through}updated ${when} · NYC OpenData<br/>` +
+    `Closed work orders only — still-open reports are not in this dataset.`;
 }
 
 //
@@ -650,19 +768,22 @@ async function main() {
     pitch: 0, bearing: 0,
   });
 
+  // The data layers attach once the basemap is ready…
   mapInstance.on('load', () => {
     deckOverlay = new deck.MapboxOverlay({ interleaved: false, layers: buildLayers() });
     mapInstance.addControl(deckOverlay);
-
-    buildTimeline();
-    buildLegend();
-    buildDataStamp();
-    setupAnnotations();
-    setMonth(0);
-    requestAnimationFrame(tick);
-
-    document.getElementById('loading').classList.add('gone');
   });
+
+  // …but the UI only needs the data, so boot it immediately. A slow basemap
+  // CDN shouldn't leave the user staring at a spinner.
+  buildTimeline();
+  buildLegend();
+  buildDataStamp();
+  buildBoroRows();
+  setupAnnotations();
+  setMonth(0);
+  requestAnimationFrame(tick);
+  document.getElementById('loading').classList.add('gone');
 
   // Controls.
   const playBtn = document.getElementById('playBtn');
@@ -686,8 +807,8 @@ async function main() {
     if (e.code === 'ArrowRight') setMonth(currentMonth + 1);
   });
 
-  // Resize spark on viewport changes.
-  window.addEventListener('resize', () => { drawSpark(); drawTimelineHistogram(); });
+  // Resize sparks on viewport changes.
+  window.addEventListener('resize', () => { drawSpark(); drawSparkLag(); drawTimelineHistogram(); });
 }
 
 main().catch(err => {

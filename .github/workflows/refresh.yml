@@ -37,8 +37,21 @@ jobs:
           echo "Rows (incl. header):"
           wc -l 'Street_Pothole_Work_Orders_latest.csv'
 
-      - name: Regenerate data.bin + meta.json
-        run: python3 preprocess.py
+      - name: Regenerate data.bin + meta.json (with sanity gate)
+        run: |
+          set -euo pipefail
+          OLD_N=$(python3 -c "import json; print(json.load(open('meta.json'))['n'])")
+          python3 preprocess.py
+          NEW_N=$(python3 -c "import json; print(json.load(open('meta.json'))['n'])")
+          echo "Previous rows: ${OLD_N} — new rows: ${NEW_N}"
+          # Closures are effectively append-only; a meaningful drop means a
+          # truncated download or an upstream outage, not real data. Allow
+          # 1% slack for upstream corrections, otherwise refuse to deploy.
+          MIN_OK=$(( OLD_N * 99 / 100 ))
+          if [ "${NEW_N}" -lt "${MIN_OK}" ]; then
+            echo "::error::Row count dropped from ${OLD_N} to ${NEW_N}; refusing to deploy."
+            exit 1
+          fi
 
       - name: Commit regenerated data if it changed
         run: |
@@ -50,6 +63,7 @@ jobs:
             echo "No data changes this month."
           else
             git commit -m "Monthly data refresh ($(date -u +%Y-%m-%d))"
+            git pull --rebase origin main
             git push
           fi
 
@@ -67,5 +81,5 @@ jobs:
           export SSHPASS
           REMOTE_BASE="${DEPLOY_PATH%/}"
           sshpass -e scp -P "${DEPLOY_PORT}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-            index.html data.bin meta.json \
+            index.html data.bin meta.json og-image.png favicon.svg .htaccess \
             "${DEPLOY_USER}@${DEPLOY_HOST}:${REMOTE_BASE}/"

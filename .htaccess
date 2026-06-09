@@ -1,0 +1,11 @@
+# Force HTTPS, scoped to this directory only.
+#
+# Bluehost fronts this domain with Cloudflare. Under Cloudflare's "Flexible"
+# SSL mode the origin sees plain HTTP even when the visitor used HTTPS, so a
+# naive HTTPS check would redirect forever. Cloudflare always sends
+# X-Forwarded-Proto, so trust that first and fall back to the local HTTPS
+# flag for direct (non-proxied) requests.
+RewriteEngine On
+RewriteCond %{HTTP:X-Forwarded-Proto} !https
+RewriteCond %{HTTPS} !=on
+RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]

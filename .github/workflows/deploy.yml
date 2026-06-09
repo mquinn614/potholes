@@ -21,7 +21,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: List files to deploy
-        run: ls -lh index.html data.bin meta.json
+        run: ls -lh index.html data.bin meta.json og-image.png favicon.svg .htaccess
 
       - name: Upload static files via scp (SSH)
         env:
@@ -37,7 +37,7 @@ jobs:
           export SSHPASS
           REMOTE_BASE="${DEPLOY_PATH%/}"
           sshpass -e scp -P "${DEPLOY_PORT}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-            index.html data.bin meta.json \
+            index.html data.bin meta.json og-image.png favicon.svg .htaccess \
             "${DEPLOY_USER}@${DEPLOY_HOST}:${REMOTE_BASE}/"
 
       - name: Verify index.html exists on server
@@ -53,4 +53,4 @@ jobs:
           REMOTE_BASE="${DEPLOY_PATH%/}"
           sshpass -e ssh -p "${DEPLOY_PORT}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
             "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            "ls -la '${REMOTE_BASE}' && test -f '${REMOTE_BASE}/index.html' && test -f '${REMOTE_BASE}/data.bin' && test -f '${REMOTE_BASE}/meta.json'"
+            "ls -la '${REMOTE_BASE}' && test -f '${REMOTE_BASE}/index.html' && test -f '${REMOTE_BASE}/data.bin' && test -f '${REMOTE_BASE}/meta.json' && test -f '${REMOTE_BASE}/og-image.png' && test -f '${REMOTE_BASE}/.htaccess'"

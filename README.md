@@ -10,7 +10,9 @@ Live: https://mquinn614.github.io/potholes/
 
 - A glowing orange pulse marks each repair finished in the current month.
 - Faded dots accumulate behind, tinted by who was mayor when each pothole was fixed.
-- The sidebar tallies repairs for the month, the term, and all-time.
+- The sidebar tallies repairs for the month, the term, and all-time, plus the
+  median wait between a citizen reporting a pothole and DOT closing it — the
+  closest thing the dataset has to a responsiveness measure.
 - The footer scrubber lets you autoplay through 16 years or drag the playhead manually.
 - Annotations appear for major events (Sandy, polar vortex, COVID, mayoral inaugurations).
 

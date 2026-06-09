@@ -10,21 +10,24 @@ Output: data.bin (parallel arrays) + meta.json (small).
 Sorted ascending by month so the browser can binary-search a current frame.
 """
 
-import csv, glob, json, re, struct, sys
-from datetime import datetime, timezone
+import csv, json, re, struct, sys
+from collections import defaultdict
+from datetime import date, datetime, timezone
 from pathlib import Path
+from statistics import median
 
 csv.field_size_limit(sys.maxsize)
 
-# Find the source CSV. Looks first in this directory, then in the parent.
+# Find the source CSV — newest by mtime wins, so a fresh download is never
+# shadowed by an older export that happens to sort first alphabetically.
 HERE = Path(__file__).resolve().parent
 candidates = (
-    sorted(HERE.glob("Street_Pothole_Work_Orders*.csv"))
-    + sorted(HERE.parent.glob("Street_Pothole_Work_Orders*.csv"))
+    list(HERE.glob("Street_Pothole_Work_Orders*.csv"))
+    + list(HERE.parent.glob("Street_Pothole_Work_Orders*.csv"))
 )
 if not candidates:
     sys.exit("No NYC pothole CSV found next to this script or in its parent directory.")
-SRC = candidates[0]
+SRC = max(candidates, key=lambda p: p.stat().st_mtime)
 OUT_DIR = HERE
 print(f"Source CSV: {SRC}")
 
@@ -66,6 +69,10 @@ def centroid(wkt):
 print(f"Reading {SRC.name}…")
 events = []
 skipped = 0
+# Days from report to close, citizen-sourced (CTZ) orders only, keyed by
+# close month. Crew-initiated orders (YRD etc.) are logged as the work
+# happens, so their lag is ~0 and says nothing about responsiveness.
+ctz_lags = defaultdict(list)
 with SRC.open(newline="") as f:
     r = csv.DictReader(f)
     for row in r:
@@ -93,7 +100,17 @@ with SRC.open(newline="") as f:
         if not (-74.4 < lon < -73.6 and 40.3 < lat < 41.0):
             skipped += 1; continue
 
-        events.append((month_idx(y, m), b, mayor_idx(y, m), lon, lat))
+        mo = month_idx(y, m)
+        events.append((mo, b, mayor_idx(y, m), lon, lat))
+
+        if (row.get("Source") or "").strip() == "CTZ":
+            try:
+                rmm, rdd, ryyyy = (row.get("RptDate") or "").split("/")
+                lag = (date(y, m, int(dd)) - date(int(ryyyy), int(rmm), int(rdd))).days
+                if lag >= 0:
+                    ctz_lags[mo].append(lag)
+            except ValueError:
+                pass
 
 print(f"Parsed {len(events)} events, skipped {skipped}.")
 
@@ -139,6 +156,15 @@ for _ in range(months_total):
     if m > 12:
         m = 1; y += 1
 
+# Monthly median wait for citizen-reported potholes (None where no CTZ
+# closures that month).
+ctz_lag_median = [
+    round(median(ctz_lags[i]), 1) if ctz_lags.get(i) else None
+    for i in range(months_total)
+]
+known = [v for v in ctz_lag_median if v is not None]
+print(f"CTZ lag medians: min {min(known)}d, max {max(known)}d across {len(known)} months")
+
 meta = {
     "n": N,
     "generated": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
@@ -147,6 +173,7 @@ meta = {
     "months": months_total,
     "monthLabels": month_labels,
     "monthlyByBoro": monthly,
+    "ctzLagMedian": ctz_lag_median,
     "boros": BORO_NAMES,
     "mayors": [
         {"name": MAYORS[0][0], "start": "2002-01", "actualStart": "2010-01", "end": "2013-12"},
