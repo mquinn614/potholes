@@ -57,28 +57,40 @@
     border: 1px solid rgba(255,255,255,0.06);
     border-radius: 8px;
     font-family: 'Charter', 'Georgia', serif;
+    /* Never grow into the scrubber on short viewports — fitSidebar() sets
+       max-height from the scrubber's measured top; this is the fallback
+       before it first runs. box-sizing so padding counts inside the cap. */
+    box-sizing: border-box;
+    max-height: calc(100vh - 96px - 160px);
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255,255,255,0.18) transparent;
   }
+  .sidebar::-webkit-scrollbar { width: 6px; }
+  .sidebar::-webkit-scrollbar-track { background: transparent; }
+  .sidebar::-webkit-scrollbar-thumb {
+    background: rgba(255,255,255,0.18); border-radius: 3px; }
   .date-big { font-size: 30px; font-weight: 700; letter-spacing: 0.3px; line-height: 1; }
   .mayor-line { margin-top: 8px; display: flex; align-items: center; gap: 8px;
     font-size: 13px; color: var(--ink); }
   .mayor-dot { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; }
   .mayor-name { font-style: italic; }
-  .stat { margin-top: 10px; font-size: 12px; color: var(--muted); display: flex; justify-content: space-between; }
+  .stat { margin-top: 8px; font-size: 12px; color: var(--muted); display: flex; justify-content: space-between; }
   .stat .v { color: var(--ink); font-variant-numeric: tabular-nums; font-weight: 600; }
   .stat.big .v { font-size: 15px; }
-  hr.sep { border: 0; border-top: 1px solid rgba(255,255,255,0.07); margin: 10px 0 6px; }
+  hr.sep { border: 0; border-top: 1px solid rgba(255,255,255,0.07); margin: 8px 0 5px; }
 
   /* Mini sparkline */
-  .spark { margin-top: 8px; height: 42px; position: relative; }
+  .spark { margin-top: 6px; height: 36px; position: relative; }
   .spark canvas { width: 100%; height: 100%; display: block; }
   .spark-label { font-size: 10px; color: var(--muted); text-transform: uppercase;
     letter-spacing: 0.7px; font-family: 'Inter', system-ui, sans-serif; margin-bottom: 2px; }
-  .data-stamp { margin-top: 12px; font-size: 10.5px; color: #6a6a6a;
-    font-family: 'Inter', system-ui, sans-serif; letter-spacing: 0.2px; line-height: 1.5; }
+  .data-stamp { margin-top: 10px; font-size: 10.5px; color: #6a6a6a;
+    font-family: 'Inter', system-ui, sans-serif; letter-spacing: 0.2px; line-height: 1.45; }
 
   /* Borough counters */
   .boro-row { display: flex; justify-content: space-between; align-items: baseline;
-    font-size: 12px; color: var(--muted); margin-top: 5px; }
+    font-size: 12px; color: var(--muted); margin-top: 4px; }
   .boro-row .v { color: var(--ink); font-variant-numeric: tabular-nums; }
   .boro-row .bar { flex: 1; height: 3px; margin: 0 8px; border-radius: 2px;
     background: rgba(255,255,255,0.06); position: relative; overflow: hidden; }
@@ -272,10 +284,15 @@ const PULSE_COLOR = [255, 165, 75]; // bright warm orange
 // ---- Load binary data + meta in parallel ----
 //
 async function loadAll() {
-  const [bin, meta] = await Promise.all([
-    fetch('data.bin').then(r => r.arrayBuffer()),
-    fetch('meta.json').then(r => r.json()),
-  ]);
+  // Fetch meta first (8 KB, revalidated every load), then key data.bin to
+  // meta's build stamp. The two files must agree — month counts and labels
+  // come from meta while the points come from the binary — and fetching
+  // them in parallel let a CDN serve a fresh one alongside a cached stale
+  // one after a monthly refresh. Versioning the big file by the small
+  // file's stamp keeps the pair consistent AND lets data.bin cache hard.
+  const meta = await fetch('meta.json', { cache: 'no-cache' }).then(r => r.json());
+  const stamp = encodeURIComponent(meta.generated || meta.n || '0');
+  const bin = await fetch(`data.bin?v=${stamp}`).then(r => r.arrayBuffer());
   const dv = new DataView(bin);
   const N = dv.getUint32(0, true);
   let off = 4;
@@ -718,6 +735,21 @@ function buildLegend() {
 }
 
 //
+// ---- Keep the sidebar clear of the scrubber ----
+//
+// The scrubber's height changes with viewport width (the legend wraps), so a
+// fixed CSS reserve is always a guess. Measure where it actually starts and
+// cap the sidebar there; it scrolls internally if the content is taller.
+function fitSidebar() {
+  const sb = document.querySelector('.sidebar');
+  const scrubber = document.querySelector('.scrubber');
+  if (!sb || !scrubber) return;
+  const gap = 14;
+  const avail = scrubber.getBoundingClientRect().top - sb.getBoundingClientRect().top - gap;
+  sb.style.maxHeight = `${Math.max(160, Math.round(avail))}px`;
+}
+
+//
 // ---- Data freshness stamp ----
 //
 function buildDataStamp() {
@@ -782,6 +814,7 @@ async function main() {
   buildBoroRows();
   setupAnnotations();
   setMonth(0);
+  fitSidebar();
   requestAnimationFrame(tick);
   document.getElementById('loading').classList.add('gone');
 
@@ -808,7 +841,9 @@ async function main() {
   });
 
   // Resize sparks on viewport changes.
-  window.addEventListener('resize', () => { drawSpark(); drawSparkLag(); drawTimelineHistogram(); });
+  window.addEventListener('resize', () => {
+    fitSidebar(); drawSpark(); drawSparkLag(); drawTimelineHistogram();
+  });
 }
 
 main().catch(err => {

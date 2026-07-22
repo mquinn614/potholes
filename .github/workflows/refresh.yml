@@ -2,10 +2,13 @@ name: Monthly data refresh
 
 'on':
   schedule:
-    # 10:17 UTC on the 1st of each month = ~6:17am ET (off-peak minute to
-    # avoid GitHub's top-of-hour scheduling delays). Cron is always UTC, so
-    # the ET clock time drifts by an hour across daylight saving — fine here.
-    - cron: '17 10 1 * *'
+    # 10:17 UTC on the 2nd of each month — deliberately NOT the 1st. NYC
+    # publishes its monthly update on the 1st at around 14:27 UTC, so a run
+    # on the 1st is a race: July 2026's fired at 12:47 UTC and pulled the
+    # previous month's snapshot, leaving the site a month stale. Waiting a
+    # day clears their window with ~20h of margin. Off-peak minute avoids
+    # GitHub's top-of-hour scheduling delays.
+    - cron: '17 10 2 * *'
   workflow_dispatch:
 
 concurrency:
